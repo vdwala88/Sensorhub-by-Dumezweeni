@@ -1,0 +1,81 @@
+@page "/"
+@using SensorHub.Shared.Dtos
+@inject IHttpClientFactory HttpClientFactory
+@implements IAsyncDisposable
+
+<PageTitle>SensorHub Dashboard</PageTitle>
+
+<h1>Live Sensors</h1>
+
+@if (_sensors is null)
+{
+    <p><em>Loading…</em></p>
+}
+else if (!_sensors.Any())
+{
+    <p>No sensors registered yet.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Location</th>
+                <th>Type</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var sensor in _sensors)
+            {
+                <tr>
+                    <td>@sensor.Name</td>
+                    <td>@sensor.Location</td>
+                    <td>@sensor.Type</td>
+                    <td>@(sensor.IsActive ? "Active" : "Inactive")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IEnumerable<SensorDto>? _sensors;
+    private PeriodicTimer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        while (_timer is not null && await _timer.WaitForNextTickAsync())
+        {
+            await RefreshAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        var client = HttpClientFactory.CreateClient("SensorHubApi");
+        try
+        {
+            _sensors = await client.GetFromJsonAsync<List<SensorDto>>("api/sensors") ?? new();
+        }
+        catch
+        {
+            // API not reachable yet — keep last-known state.
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _timer?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
